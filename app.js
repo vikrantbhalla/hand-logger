@@ -203,6 +203,9 @@ function saveState() {
   } catch (e) {
     console.error("saveState failed", e);
   }
+  // Topbar mirrors derived (auto-calculated) counters; refresh on every save
+  // so VPIP and SD update the moment a hand changes.
+  if (document.getElementById("session-date")) renderTopbar();
 }
 
 async function newSession() {
@@ -224,11 +227,22 @@ function renderAll() {
   renderHandList();
 }
 
+// Derived counters — VPIP and SD are computed from logged hands so the user
+// never has to tally manually. Pure folds (no Hand entry, no Stub) are by
+// definition not VPIP, and showdowns are recorded inside their hand.
+const VPIP_RE = /\b(Limp|Call|Raise|3-bet|4-bet|Jam|Squeeze)\b/i;
+function derivedVpipCount() {
+  return state.hands.filter(h => VPIP_RE.test(h.preflopSummary || "")).length;
+}
+function derivedShowdownCount() {
+  return state.hands.filter(h => h.showdown && h.showdown.length > 0).length;
+}
+
 function renderTopbar() {
   document.getElementById("session-date").textContent = formatDateForUI(state.session.date);
   document.getElementById("session-stakes").textContent = state.session.stakes;
-  document.querySelector("#btn-tally-vpip .num").textContent = state.session.tally.vpip;
-  document.querySelector("#btn-tally-sd .num").textContent = state.session.tally.sd;
+  document.querySelector("#btn-tally-vpip .num").textContent = derivedVpipCount();
+  document.querySelector("#btn-tally-sd .num").textContent = derivedShowdownCount();
 }
 
 // ---------- Table SVG ----------
@@ -1064,8 +1078,7 @@ function editShowdown(h) {
         if (!c2) { editShowdown(h); return; }
         h.showdown = h.showdown || [];
         h.showdown.push({ seatIdx, cards: [c1, c2] });
-        state.session.tally.sd += 1;
-        saveState();
+        saveState(); // SD counter auto-updates via derivedShowdownCount()
         editShowdown(h);
       });
       root.querySelectorAll("button[data-act='remove']").forEach(b => {
@@ -1073,7 +1086,6 @@ function editShowdown(h) {
           const i = parseInt(b.dataset.sdi, 10);
           h.showdown.splice(i, 1);
           if (h.showdown.length === 0) h.showdown = null;
-          state.session.tally.sd = Math.max(0, state.session.tally.sd - 1);
           saveState();
           editShowdown(h);
         });
@@ -1203,7 +1215,7 @@ function exportToMarkdown() {
   }).filter(Boolean);
   lines.push(`**Table:** ${seated.join(", ")}`);
   lines.push("");
-  lines.push(`Quick tally — VPIP: ${state.session.tally.vpip} · Showdowns: ${state.session.tally.sd}`);
+  lines.push(`Counts — VPIP: ${derivedVpipCount()} · Showdowns: ${derivedShowdownCount()} · (auto-derived from ${state.hands.length} logged hand${state.hands.length === 1 ? "" : "s"})`);
   lines.push("");
   lines.push("---");
   lines.push("");
@@ -1437,27 +1449,17 @@ window.addEventListener("DOMContentLoaded", () => {
   document.getElementById("btn-quick-stub").addEventListener("click", newQuickStub);
   document.getElementById("btn-export").addEventListener("click", exportToClipboard);
   document.getElementById("btn-settings").addEventListener("click", openSettings);
-  // Tally counters: tap = +1; long-press (500ms) or right-click = -1.
-  // The long-press path covers iPhone where right-click doesn't exist.
-  function bindTally(btnId, key) {
-    const btn = document.getElementById(btnId);
-    let pressTimer = null;
-    let longFired = false;
-    const inc = () => { state.session.tally[key] += 1; saveState(); renderTopbar(); };
-    const dec = () => { state.session.tally[key] = Math.max(0, state.session.tally[key] - 1); saveState(); renderTopbar(); };
-    btn.addEventListener("click", () => { if (longFired) { longFired = false; return; } inc(); });
-    btn.addEventListener("contextmenu", e => { e.preventDefault(); dec(); });
-    btn.addEventListener("pointerdown", () => {
-      longFired = false;
-      pressTimer = setTimeout(() => { longFired = true; dec(); navigator.vibrate?.(20); }, 500);
-    });
-    const cancel = () => { if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; } };
-    btn.addEventListener("pointerup", cancel);
-    btn.addEventListener("pointerleave", cancel);
-    btn.addEventListener("pointercancel", cancel);
-  }
-  bindTally("btn-tally-vpip", "vpip");
-  bindTally("btn-tally-sd", "sd");
+  // VPIP / SD chips are now read-only displays; their value is derived from
+  // logged hands by derivedVpipCount() / derivedShowdownCount(). Tap shows a
+  // brief explainer popover so the auto-behaviour isn't a black box.
+  const explainTally = (which) => {
+    const body = which === "vpip"
+      ? `Auto-counted from logged hands.\n\nEvery hand you log via + New Hand or + Stub with a non-fold pre-flop action (Limp / Call / Raise / 3-bet / 4-bet / Jam) counts as 1 VPIP. Pure folds don't count by definition. Nothing to tap — log the hand and the count moves.`
+      : `Auto-counted from logged hands.\n\nEvery hand with at least one showdown entry (added via the Showdown step in the hand editor) counts as 1. Add a showdown to a hand and the count moves automatically.`;
+    showOnboarding(which === "vpip" ? "VPIP — auto" : "Showdowns — auto", body);
+  };
+  document.getElementById("btn-tally-vpip").addEventListener("click", () => explainTally("vpip"));
+  document.getElementById("btn-tally-sd").addEventListener("click", () => explainTally("sd"));
   document.getElementById("btn-add-player").addEventListener("click", () => alert("Tap an empty seat on the table to assign a player."));
   document.getElementById("btn-set-my-seat").addEventListener("click", () => alert("Tap your seat on the table → 'This is my seat'."));
   document.getElementById("btn-move-button").addEventListener("click", () => { advanceButton(); saveState(); renderTable(); });

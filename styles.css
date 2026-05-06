@@ -58,11 +58,13 @@ input, select, textarea { font: inherit; color: var(--ink); background: var(--su
 .topbar-left, .topbar-right { display: flex; align-items: center; gap: 8px; }
 .counter {
   display: inline-flex; align-items: center; gap: 4px;
-  background: var(--surface-2); border: 1px solid var(--line);
+  background: transparent; border: 1px dashed var(--line);
   border-radius: 999px; padding: 6px 10px; min-height: 32px;
   color: var(--ink-2);
+  cursor: help;
 }
-.counter .lbl { font-weight: 600; color: var(--ink-3); font-size: 12px; }
+.counter:active { background: var(--surface-2); }
+.counter .lbl { font-weight: 600; color: var(--ink-3); font-size: 11px; letter-spacing: 0.4px; }
 .counter .num { font-variant-numeric: tabular-nums; color: var(--ink); font-weight: 600; }
 .icon-btn {
   width: 32px; height: 32px; border-radius: 999px;
