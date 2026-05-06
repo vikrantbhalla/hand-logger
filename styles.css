@@ -87,7 +87,7 @@ input, select, textarea { font: inherit; color: var(--ink); background: var(--su
 #table-svg {
   width: 100%;
   height: auto;
-  max-height: 38vh;
+  max-height: 26vh;
   display: block;
 }
 #seat-tools {
@@ -228,6 +228,64 @@ input, select, textarea { font: inherit; color: var(--ink); background: var(--su
   display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 8px;
 }
 .action-row .chip { width: 100%; }
+
+/* Inline next-hand panel — sits between the table and the hand list */
+#next-hand-section {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+  background: linear-gradient(180deg, var(--bg) 0%, var(--surface) 100%);
+}
+.next-prompt.setup {
+  color: var(--ink-2);
+  font-size: 13px;
+  text-align: center;
+  padding: 14px 10px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+}
+.next-prompt .next-head {
+  color: var(--ink-2);
+  font-size: 12px;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  text-align: center;
+  margin-bottom: 6px;
+}
+.next-prompt .next-head strong {
+  color: var(--accent);
+  font-size: 13px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.inline-card-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.inline-card-row {
+  display: grid;
+  grid-template-columns: repeat(13, 1fr);
+  gap: 3px;
+}
+.inline-card-cell {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 6px 0 5px;
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  line-height: 1;
+}
+.inline-card-cell .sg { font-size: 10px; opacity: 0.85; margin-top: 1px; }
+.inline-card-cell.suit-h, .inline-card-cell.suit-d { color: #d97a7a; }
+.inline-card-cell:active { background: var(--surface-3); transform: scale(0.96); }
+.inline-card-cell[data-disabled='true'] { opacity: 0.25; pointer-events: none; }
 
 /* Card grid (52-card visual picker) */
 .card-grid {

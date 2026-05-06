@@ -203,9 +203,12 @@ function saveState() {
   } catch (e) {
     console.error("saveState failed", e);
   }
-  // Topbar mirrors derived (auto-calculated) counters; refresh on every save
-  // so VPIP and SD update the moment a hand changes.
-  if (document.getElementById("session-date")) renderTopbar();
+  // Refresh derived UI on every save: VPIP/SD counts in topbar, plus the
+  // inline next-hand panel (its position label tracks the dealer button).
+  if (document.getElementById("session-date")) {
+    renderTopbar();
+    renderNextHandPanel();
+  }
 }
 
 async function newSession() {
@@ -224,7 +227,41 @@ async function newSession() {
 function renderAll() {
   renderTopbar();
   renderTable();
+  renderNextHandPanel();
   renderHandList();
+}
+
+// ---------- Inline next-hand panel ----------
+// Lives between the table viz and the hand list. Tapping a card kicks off
+// the chained flow with that card pre-selected as card 1, so the user never
+// has to tap "+ New Hand" first to start logging — turning empty real estate
+// into the primary action surface.
+function renderNextHandPanel() {
+  const root = document.getElementById("next-hand-section");
+  if (!root) return;
+  if (state.session.mySeatIdx == null) {
+    root.innerHTML = `<div class="next-prompt setup"><strong>Set up the table.</strong> Tap your seat on the felt above, then choose <em>This is my seat</em>. Set the dealer button. Then come back here.</div>`;
+    return;
+  }
+  const pos = myPosition() || "?";
+  // Cards already in play this session can't be picked again — but we don't
+  // grey out across hands (cards reset per hand). For now: no greying on this
+  // inline grid; the full picker handles per-hand exclusion.
+  const cells = SUITS.map(suit => {
+    const row = RANKS.map(rank => `<button class="inline-card-cell suit-${suit}" data-rank="${rank}" data-suit="${suit}" aria-label="${rank}${suit}">${rank}<span class="sg">${SUIT_GLYPH[suit]}</span></button>`).join("");
+    return `<div class="inline-card-row">${row}</div>`;
+  }).join("");
+  root.innerHTML = `
+    <div class="next-prompt">
+      <div class="next-head">Next hand · <strong>${pos}</strong> · pick first card</div>
+      <div class="inline-card-grid">${cells}</div>
+    </div>
+  `;
+  root.querySelectorAll(".inline-card-cell").forEach(b => {
+    b.addEventListener("click", () => {
+      newQuickStub({ rank: b.dataset.rank, suit: b.dataset.suit });
+    });
+  });
 }
 
 // Derived counters — VPIP and SD are computed from logged hands so the user
@@ -348,17 +385,11 @@ function renderHandList() {
   const list = document.getElementById("hand-list");
   const empty = document.getElementById("hand-list-empty");
   list.innerHTML = "";
-  if (state.hands.length === 0) {
-    empty.classList.remove("hidden");
-    if (state.session.mySeatIdx == null) {
-      empty.innerHTML = `<p><strong>Welcome.</strong> Tap your seat on the table above, then choose <em>This is my seat</em>. Set the dealer button on the actual button player. Then come back and tap <strong>+ New Hand</strong>.</p>`;
-    } else {
-      empty.innerHTML = `<p>Position set. Tap <strong>+ New Hand</strong> — pick your two cards, then your pre-flop action. Add streets if the hand went past pre-flop.</p>`;
-    }
-    return;
-  }
   empty.classList.add("hidden");
-  for (const h of state.hands) {
+  // Empty state is now handled by the inline next-hand panel above the list.
+  // Render most-recent first so the latest action is always visible above the
+  // fold; the list shrinks below the inline grid in available real estate.
+  for (const h of [...state.hands].reverse()) {
     const li = document.createElement("li");
     li.className = "hand-row";
     li.dataset.tier = handTier(h);
@@ -619,7 +650,7 @@ function quickFold() {
   navigator.vibrate?.(15);
 }
 
-function newQuickStub() {
+function newQuickStub(startingCard = null) {
   if (state.session.mySeatIdx == null) {
     showOnboarding("Set your seat first", "Tap your seat on the table, then choose This is my seat. The dealer button can be set the same way on the dealer's seat.");
     return;
@@ -632,7 +663,7 @@ function newQuickStub() {
     timestamp: hhmm(new Date()),
     position: myPosition(),
     seatingSnapshot: snapshotSeating(),
-    myCards: null,
+    myCards: startingCard ? [startingCard, null] : null,
     preflopSummary: "",
     preflop: [],
     flop: null, turn: null, river: null, showdown: null, notes: "",
@@ -643,7 +674,8 @@ function newQuickStub() {
 }
 
 function openQuickStubFlow(h) {
-  // Step 1: pick card 1 → step 2: pick card 2 → step 3: action chips
+  // Resumable: dispatches based on what's already filled on the hand.
+  // pickCard1 → pickCard2 → showActionChips. Inline-grid taps preset card 1.
   const usedBoard = collectBoard(h);
   const pickCard1 = () => {
     openCardPicker({
@@ -742,7 +774,10 @@ function openQuickStubFlow(h) {
       }
     });
   };
-  pickCard1();
+  // Resume at the right step
+  if (h.myCards && h.myCards[0] && h.myCards[1]) showActionChips();
+  else if (h.myCards && h.myCards[0]) pickCard2(h.myCards[0]);
+  else pickCard1();
 }
 
 function pruneEmptyHands() {
@@ -1493,10 +1528,9 @@ function parseStakes(s) {
 }
 
 window.addEventListener("DOMContentLoaded", () => {
-  // + New Hand uses the chained flow (cards → action). The flow's "Add streets"
-  // button opens the full editor when the hand goes past pre-flop.
-  document.getElementById("btn-new-hand").addEventListener("click", newQuickStub);
-  // + Fold: 1-tap fold record, used to keep VPIP% denominator honest.
+  // The inline 52-card grid (between table and hand list) is the primary
+  // hand-entry surface — tap a card to start the chained flow.
+  // + Fold (bottom bar): 1-tap fold record, keeps VPIP% denominator honest.
   document.getElementById("btn-quick-fold").addEventListener("click", quickFold);
   document.getElementById("btn-export").addEventListener("click", exportToClipboard);
   document.getElementById("btn-settings").addEventListener("click", openSettings);
