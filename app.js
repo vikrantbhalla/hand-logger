@@ -342,9 +342,9 @@ function renderHandList() {
   if (state.hands.length === 0) {
     empty.classList.remove("hidden");
     if (state.session.mySeatIdx == null) {
-      empty.innerHTML = `<p><strong>Welcome.</strong> Tap your seat on the table above, then choose <em>This is my seat</em>. Set the dealer button on the actual button player. Then come back and tap <strong>+ New Hand</strong> or <strong>+ Stub</strong>.</p>`;
+      empty.innerHTML = `<p><strong>Welcome.</strong> Tap your seat on the table above, then choose <em>This is my seat</em>. Set the dealer button on the actual button player. Then come back and tap <strong>+ New Hand</strong>.</p>`;
     } else {
-      empty.innerHTML = `<p>Position set. Tap <strong>+ Stub</strong> for a quick fold/limp note (≤4 taps), or <strong>+ New Hand</strong> for a full hand with streets.</p>`;
+      empty.innerHTML = `<p>Position set. Tap <strong>+ New Hand</strong> — pick your two cards, then your pre-flop action. Add streets if the hand went past pre-flop.</p>`;
     }
     return;
   }
@@ -651,11 +651,13 @@ function openQuickStubFlow(h) {
           <button class="chip" data-pre="call">Call</button>
           <button class="chip" data-pre="raise">Raise…</button>
           <button class="chip" data-pre="3bet">3-bet…</button>
+          <button class="chip" data-pre="4bet">4-bet…</button>
           <button class="chip" data-pre="jam">Jam</button>
         </div>
       </div>
+      <p class="muted" style="font-size: 12px; margin: 4px 0 0">After tapping an action, you can add streets if the hand went past pre-flop.</p>
       <div class="actions">
-        <button class="ghost-btn" data-act="full">Open full editor →</button>
+        <button class="ghost-btn" data-act="full">+ Add streets →</button>
         <button class="ghost-btn" data-act="cancel">Cancel</button>
       </div>
     `;
@@ -677,6 +679,10 @@ function openQuickStubFlow(h) {
               const v = await pickAmount("3-bet to ₹?", [600, 750, 900, 1200, 1500, 2000], "750");
               if (!v) return;
               action = "3-bet ₹" + v;
+            } else if (k === "4bet") {
+              const v = await pickAmount("4-bet to ₹?", [1500, 1800, 2000, 2500, 3000], "2000");
+              if (!v) return;
+              action = "4-bet ₹" + v;
             }
             if (!action) return;
             h.preflopSummary = action;
@@ -1445,8 +1451,9 @@ function parseStakes(s) {
 }
 
 window.addEventListener("DOMContentLoaded", () => {
-  document.getElementById("btn-new-hand").addEventListener("click", newHand);
-  document.getElementById("btn-quick-stub").addEventListener("click", newQuickStub);
+  // + New Hand uses the chained flow (cards → action). The flow's "Add streets"
+  // button opens the full editor when the hand goes past pre-flop.
+  document.getElementById("btn-new-hand").addEventListener("click", newQuickStub);
   document.getElementById("btn-export").addEventListener("click", exportToClipboard);
   document.getElementById("btn-settings").addEventListener("click", openSettings);
   // VPIP / SD chips are now read-only displays; their value is derived from
@@ -1454,7 +1461,7 @@ window.addEventListener("DOMContentLoaded", () => {
   // brief explainer popover so the auto-behaviour isn't a black box.
   const explainTally = (which) => {
     const body = which === "vpip"
-      ? `Auto-counted from logged hands.\n\nEvery hand you log via + New Hand or + Stub with a non-fold pre-flop action (Limp / Call / Raise / 3-bet / 4-bet / Jam) counts as 1 VPIP. Pure folds don't count by definition. Nothing to tap — log the hand and the count moves.`
+      ? `Auto-counted from logged hands.\n\nEvery hand you log via + New Hand with a non-fold pre-flop action (Limp / Call / Raise / 3-bet / 4-bet / Jam) counts as 1 VPIP. Pure folds don't count by definition. Nothing to tap — log the hand and the count moves.`
       : `Auto-counted from logged hands.\n\nEvery hand with at least one showdown entry (added via the Showdown step in the hand editor) counts as 1. Add a showdown to a hand and the count moves automatically.`;
     showOnboarding(which === "vpip" ? "VPIP — auto" : "Showdowns — auto", body);
   };
