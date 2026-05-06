@@ -261,7 +261,7 @@ function renderTable() {
     g.appendChild(shape);
 
     const label = el("text", { x: sx, y: sy + 4, class: "seat-label" });
-    label.textContent = seat.player || (i === state.session.mySeatIdx ? "ME" : "");
+    label.textContent = seat.player || (i === state.session.mySeatIdx ? (state.settings.myCode || "ME") : "");
     g.appendChild(label);
 
     // Position label (BTN / SB / BB / etc)
@@ -298,14 +298,16 @@ function el(tag, attrs) {
 
 function positionForSeat(seatIdx) {
   // Build clockwise list of *occupied* seats starting from BTN.
+  // The user's own seat counts as occupied even when no player code is set on it.
+  const isOccupied = (idx) => !!state.session.seats[idx].player || idx === state.session.mySeatIdx;
   const occupied = [];
   let i = state.session.buttonSeatIdx;
   for (let n = 0; n < 9; n++) {
     const idx = (i + n) % 9;
-    if (state.session.seats[idx].player) occupied.push(idx);
+    if (isOccupied(idx)) occupied.push(idx);
   }
   if (occupied.length === 0) return null;
-  if (!state.session.seats[seatIdx].player) return null;
+  if (!isOccupied(seatIdx)) return null;
   const order = occupied.indexOf(seatIdx);
   if (order < 0) return null;
   const labels = POSITIONS_BY_COUNT[occupied.length] || POSITIONS_BY_COUNT[9];
@@ -491,7 +493,7 @@ function onSeatTap(seatIdx) {
         <div class="row" id="player-chips">
           ${PLAYER_CODES.map(p => `<button class="chip" data-code="${p.code}">${p.code} <span class="muted">${p.name}</span></button>`).join("")}
           <button class="chip" data-act="new-player">+ New</button>
-          <button class="chip" data-act="set-mine">ME (my seat)</button>
+          <button class="chip" data-act="set-mine">${state.settings.myCode || "ME"} (my seat)</button>
         </div>
       </div>
     ` : ""}
@@ -866,10 +868,32 @@ function renderHandEditor(h) {
           renderHandEditor(h);
         });
       });
-      // Reposition
+      // Reposition — chip-picker over standard 9-max position labels
       root.querySelector("button[data-act='repos']")?.addEventListener("click", () => {
-        const newPos = prompt("Position (BTN/CO/HJ/MP/UTG+1/UTG/SB/BB):", h.position || "");
-        if (newPos) { h.position = newPos.trim(); saveState(); renderHandEditor(h); }
+        const positions = ["BTN", "CO", "HJ", "MP", "UTG+1", "UTG", "SB", "BB"];
+        const html = `
+          <h2>Position</h2>
+          <div class="row">
+            ${positions.map(p => `<button class="chip" data-pos="${p}" ${p === h.position ? "data-selected='true'" : ""}>${p}</button>`).join("")}
+          </div>
+          <div class="actions"><button class="ghost-btn" data-act="cancel">Cancel</button></div>
+        `;
+        openModal(html, {
+          onOpen(root2) {
+            root2.querySelectorAll("button[data-pos]").forEach(b => {
+              b.addEventListener("click", () => {
+                h.position = b.dataset.pos;
+                saveState();
+                closeModal();
+                renderHandEditor(h);
+              });
+            });
+            root2.querySelector("button[data-act='cancel']").addEventListener("click", () => {
+              closeModal();
+              renderHandEditor(h);
+            });
+          }
+        });
       });
       // Streets
       root.querySelector("button[data-act='add-flop']")?.addEventListener("click", () => editStreet(h, "flop"));
@@ -964,7 +988,7 @@ function editStreet(h, street) {
         slot.addEventListener("click", () => {
           const i = parseInt(slot.dataset.bslot, 10);
           openCardPicker({
-            title: `${street} card ${i+1}`,
+            title: `${street.charAt(0).toUpperCase()+street.slice(1)} card ${i+1}`,
             usedCards: [...(h.myCards || []), ...collectBoard(h).filter(c => !(street === "flop" ? h.flop?.cards?.[i] === c : h[street]?.card === c))],
             allowCamera: true,
             onPick(card) {
@@ -1032,7 +1056,7 @@ function editShowdown(h) {
       root.querySelector("button[data-act='add']")?.addEventListener("click", async () => {
         const seatIdx = await pickSeatAsync("Whose cards?");
         if (seatIdx == null) { editShowdown(h); return; }
-        const code = seatIdx === state.session.mySeatIdx ? "ME" : (state.session.seats[seatIdx].player || "?");
+        const code = seatIdx === state.session.mySeatIdx ? (state.settings.myCode || "ME") : (state.session.seats[seatIdx].player || "?");
         const taken = [...(h.myCards||[]), ...collectBoard(h), ...((h.showdown||[]).flatMap(s=>s.cards||[]))];
         const c1 = await pickCardAsync(`Showdown ${code} card 1`, taken);
         if (!c1) { editShowdown(h); return; }
@@ -1083,7 +1107,7 @@ function pickSeatAsync(title) {
   return new Promise(resolve => {
     let picked = false;
     const chips = state.session.seats
-      .map((s, i) => ({ idx: i, code: i === state.session.mySeatIdx ? "ME" : s.player }))
+      .map((s, i) => ({ idx: i, code: i === state.session.mySeatIdx ? (state.settings.myCode || "ME") : s.player }))
       .filter(s => s.code);
     if (chips.length === 0) { resolve(null); return; }
     const html = `
