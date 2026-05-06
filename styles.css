@@ -155,7 +155,7 @@ input, select, textarea { font: inherit; color: var(--ink); background: var(--su
 .seat-me .seat-shape { stroke: var(--me); stroke-width: 2; }
 .seat-folded .seat-shape { opacity: 0.35; }
 .seat-label { fill: var(--ink); font-size: 13px; font-weight: 600; text-anchor: middle; pointer-events: none; }
-.seat-pos { fill: var(--ink-3); font-size: 10px; text-anchor: middle; pointer-events: none; }
+.seat-pos { fill: var(--ink-3); font-size: 12px; font-weight: 500; text-anchor: middle; pointer-events: none; }
 .button-disc { fill: var(--me); stroke: #000; stroke-width: 1; }
 .button-letter { fill: #1a1300; font-size: 11px; font-weight: 700; text-anchor: middle; dominant-baseline: central; pointer-events: none; }
 .felt { fill: var(--table-felt); stroke: var(--table-rail); stroke-width: 6; }

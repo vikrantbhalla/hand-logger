@@ -1,4 +1,7 @@
 // Hand Logger — single-file vanilla-JS app
+// Build SHA injected at deploy time (`dev` when running locally).
+const BUILD_SHA = "__BUILD_SHA__";
+console.log("[hand-logger] build:", BUILD_SHA === "__BUILD_SHA__" ? "dev" : BUILD_SHA);
 // Sections:
 //   1. Constants & strategy data
 //   2. State (localStorage-backed)
@@ -171,6 +174,7 @@ const DEFAULT_STATE = () => ({
   settings: {
     ocrEnabled: false,
     anthropicKey: null,
+    myCode: "V",
   },
 });
 
@@ -264,7 +268,7 @@ function renderTable() {
     const pos = positionForSeat(i);
     if (pos) {
       const plx = sx;
-      const ply = sy + r + 12;
+      const ply = sy + r + 16;
       const posText = el("text", { x: plx, y: ply, class: "seat-pos" });
       posText.textContent = pos;
       g.appendChild(posText);
@@ -372,7 +376,7 @@ function summariseHand(h) {
 function seatCode(idx) {
   const s = state.session.seats[idx];
   if (!s) return "?";
-  if (idx === state.session.mySeatIdx) return "ME";
+  if (idx === state.session.mySeatIdx) return state.settings.myCode || "V";
   return s.player || `S${idx+1}`;
 }
 
@@ -1026,16 +1030,14 @@ function editShowdown(h) {
   openModal(html, {
     onOpen(root) {
       root.querySelector("button[data-act='add']")?.addEventListener("click", async () => {
-        const code = prompt("Seat code (e.g. T, P, Ns, ME):");
-        if (!code) return;
-        // Find seatIdx by player code
-        let seatIdx = state.session.seats.findIndex(s => s.player === code);
-        if (code.toUpperCase() === "ME") seatIdx = state.session.mySeatIdx;
-        if (seatIdx < 0) { alert(`Seat for "${code}" not found.`); return; }
-        const c1 = await pickCardAsync(`Showdown ${code} card 1`, [...(h.myCards||[]), ...collectBoard(h), ...((h.showdown||[]).flatMap(s=>s.cards||[]))]);
-        if (!c1) return;
-        const c2 = await pickCardAsync(`Showdown ${code} card 2`, [...(h.myCards||[]), ...collectBoard(h), ...((h.showdown||[]).flatMap(s=>s.cards||[])), c1]);
-        if (!c2) return;
+        const seatIdx = await pickSeatAsync("Whose cards?");
+        if (seatIdx == null) { editShowdown(h); return; }
+        const code = seatIdx === state.session.mySeatIdx ? "ME" : (state.session.seats[seatIdx].player || "?");
+        const taken = [...(h.myCards||[]), ...collectBoard(h), ...((h.showdown||[]).flatMap(s=>s.cards||[]))];
+        const c1 = await pickCardAsync(`Showdown ${code} card 1`, taken);
+        if (!c1) { editShowdown(h); return; }
+        const c2 = await pickCardAsync(`Showdown ${code} card 2`, [...taken, c1]);
+        if (!c2) { editShowdown(h); return; }
         h.showdown = h.showdown || [];
         h.showdown.push({ seatIdx, cards: [c1, c2] });
         state.session.tally.sd += 1;
@@ -1062,14 +1064,55 @@ function editShowdown(h) {
 
 function pickCardAsync(title, usedCards) {
   return new Promise(resolve => {
+    let picked = false;
     openCardPicker({
       title, usedCards, allowCamera: false,
-      onPick: card => resolve(card),
+      onPick: card => { picked = true; resolve(card); },
     });
-    // If user closes without picking, resolve null after modal closes
+    // openCardPicker's click handler runs `closeModal()` then `onPick(card)` synchronously.
+    // MutationObserver callbacks are microtasks, so they fire AFTER onPick — we just gate on `picked`.
     const root = document.getElementById("modal-root");
     const obs = new MutationObserver(() => {
-      if (root.hidden) { obs.disconnect(); resolve(null); }
+      if (root.hidden) { obs.disconnect(); if (!picked) resolve(null); }
+    });
+    obs.observe(root, { attributes: true });
+  });
+}
+
+function pickSeatAsync(title) {
+  return new Promise(resolve => {
+    let picked = false;
+    const chips = state.session.seats
+      .map((s, i) => ({ idx: i, code: i === state.session.mySeatIdx ? "ME" : s.player }))
+      .filter(s => s.code);
+    if (chips.length === 0) { resolve(null); return; }
+    const html = `
+      <h2>${title}</h2>
+      <div class="row">
+        ${chips.map(c => `<button class="chip" data-idx="${c.idx}">${c.code}</button>`).join("")}
+      </div>
+      <div class="actions">
+        <button class="ghost-btn" data-act="cancel">Cancel</button>
+      </div>
+    `;
+    openModal(html, {
+      onOpen(root) {
+        root.querySelectorAll("button[data-idx]").forEach(b => {
+          b.addEventListener("click", () => {
+            picked = true;
+            const idx = parseInt(b.dataset.idx, 10);
+            closeModal();
+            resolve(idx);
+          });
+        });
+        root.querySelector("button[data-act='cancel']").addEventListener("click", () => {
+          closeModal();
+        });
+      }
+    });
+    const root = document.getElementById("modal-root");
+    const obs = new MutationObserver(() => {
+      if (root.hidden) { obs.disconnect(); if (!picked) resolve(null); }
     });
     obs.observe(root, { attributes: true });
   });
@@ -1129,8 +1172,9 @@ function exportToMarkdown() {
   lines.push(`**Date:** ${formatDateForUI(dt)}`);
   lines.push(`**Stakes:** ${state.session.stakes}`);
   lines.push(`**Format:** ${state.session.format}`);
+  const myCode = state.settings.myCode || "V";
   const seated = state.session.seats.map((s, i) => {
-    if (i === state.session.mySeatIdx) return "ME";
+    if (i === state.session.mySeatIdx) return `${myCode} (me)`;
     return s.player;
   }).filter(Boolean);
   lines.push(`**Table:** ${seated.join(", ")}`);
@@ -1279,12 +1323,21 @@ function openSettings() {
       <input id="set-date" value="${state.session.date}" />
     </div>
     <div class="field">
-      <label>Stakes</label>
-      <input id="set-stakes" value="${state.session.stakes}" />
+      <label>Stakes (SB / BB, ₹)</label>
+      <div class="field-inline">
+        <input id="set-sb" type="number" inputmode="numeric" min="1" step="1" value="${parseStakes(state.session.stakes).sb}" style="width: 80px" />
+        <span class="muted">/</span>
+        <input id="set-bb" type="number" inputmode="numeric" min="1" step="1" value="${parseStakes(state.session.stakes).bb}" style="width: 80px" />
+      </div>
     </div>
     <div class="field">
       <label>Format</label>
       <input id="set-format" value="${state.session.format}" />
+    </div>
+    <div class="field">
+      <label>Your player code</label>
+      <input id="set-mycode" maxlength="3" style="width: 80px" placeholder="V" value="${state.settings.myCode || 'V'}" />
+      <p class="muted" style="font-size: 12px">Used in the export so the scorer attributes hands to your profile (e.g. "V (me)").</p>
     </div>
     <hr style="border-color: var(--line)" />
     <div class="field">
@@ -1308,8 +1361,11 @@ function openSettings() {
     onOpen(root) {
       root.querySelector("button[data-act='save']").addEventListener("click", () => {
         state.session.date = root.querySelector("#set-date").value;
-        state.session.stakes = root.querySelector("#set-stakes").value;
+        const sb = parseInt(root.querySelector("#set-sb").value, 10) || 25;
+        const bb = parseInt(root.querySelector("#set-bb").value, 10) || 50;
+        state.session.stakes = `${sb}/${bb}`;
         state.session.format = root.querySelector("#set-format").value;
+        state.settings.myCode = (root.querySelector("#set-mycode").value || "V").trim().toUpperCase().slice(0, 3);
         state.settings.ocrEnabled = root.querySelector("#set-ocr").checked;
         state.settings.anthropicKey = root.querySelector("#set-key").value || null;
         saveState();
@@ -1344,6 +1400,12 @@ function formatDateForUI(s) {
 }
 function escapeHtml(s) {
   return String(s || "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+function parseStakes(s) {
+  // "25/50" → { sb: 25, bb: 50 }. Robust to extra whitespace and stray chars.
+  const m = String(s || "").match(/(\d+)\s*\/\s*(\d+)/);
+  if (m) return { sb: parseInt(m[1], 10), bb: parseInt(m[2], 10) };
+  return { sb: 25, bb: 50 };
 }
 
 window.addEventListener("DOMContentLoaded", () => {

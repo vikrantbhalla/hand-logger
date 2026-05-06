@@ -1,0 +1,50 @@
+name: Deploy to Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Inject cache-bust SHA into asset URLs
+        run: |
+          SHA="${GITHUB_SHA::8}"
+          echo "Cache-bust version: $SHA"
+          sed -i "s|app\.js\"|app.js?v=$SHA\"|g" index.html
+          sed -i "s|styles\.css\"|styles.css?v=$SHA\"|g" index.html
+          sed -i "s|config\.local\.js\"|config.local.js?v=$SHA\"|g" index.html
+          sed -i "s|manifest\.webmanifest\"|manifest.webmanifest?v=$SHA\"|g" index.html
+          # Stamp the SHA inside app.js so the running app can show it
+          sed -i "s|__BUILD_SHA__|$SHA|g" app.js || true
+          echo "--- index.html after rewrite ---"
+          grep -E '\.(js|css|webmanifest)\?' index.html || true
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: '.'
+
+      - name: Deploy to Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
