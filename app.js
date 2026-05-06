@@ -238,10 +238,19 @@ function derivedShowdownCount() {
   return state.hands.filter(h => h.showdown && h.showdown.length > 0).length;
 }
 
+function vpipPercent() {
+  const total = state.hands.length;
+  if (total === 0) return null;
+  return Math.round((derivedVpipCount() / total) * 100);
+}
+
 function renderTopbar() {
   document.getElementById("session-date").textContent = formatDateForUI(state.session.date);
   document.getElementById("session-stakes").textContent = state.session.stakes;
-  document.querySelector("#btn-tally-vpip .num").textContent = derivedVpipCount();
+  const vp = derivedVpipCount();
+  const total = state.hands.length;
+  const pct = vpipPercent();
+  document.querySelector("#btn-tally-vpip .num").textContent = total === 0 ? "—" : `${vp} · ${pct}%`;
   document.querySelector("#btn-tally-sd .num").textContent = derivedShowdownCount();
 }
 
@@ -582,6 +591,33 @@ function openCardPicker(opts) {
 // ============================================================
 // 5. Hand flow
 // ============================================================
+
+// 1-tap pure-fold: records a fold against the user's current position with no
+// hole cards, so the VPIP% denominator stays honest without forcing the user
+// to pick cards for every dealt-and-dropped UTG hand.
+function quickFold() {
+  if (state.session.mySeatIdx == null) {
+    showOnboarding("Set your seat first", "Tap your seat on the table, then choose This is my seat.");
+    return;
+  }
+  pruneEmptyHands();
+  if (state.hands.length > 0) advanceButton();
+  const n = state.hands.length + 1;
+  const hand = {
+    n,
+    timestamp: hhmm(new Date()),
+    position: myPosition(),
+    seatingSnapshot: snapshotSeating(),
+    myCards: null,
+    preflopSummary: "Fold",
+    preflop: [],
+    flop: null, turn: null, river: null, showdown: null, notes: "",
+  };
+  state.hands.push(hand);
+  saveState();
+  renderHandList();
+  navigator.vibrate?.(15);
+}
 
 function newQuickStub() {
   if (state.session.mySeatIdx == null) {
@@ -1221,7 +1257,13 @@ function exportToMarkdown() {
   }).filter(Boolean);
   lines.push(`**Table:** ${seated.join(", ")}`);
   lines.push("");
-  lines.push(`Counts — VPIP: ${derivedVpipCount()} · Showdowns: ${derivedShowdownCount()} · (auto-derived from ${state.hands.length} logged hand${state.hands.length === 1 ? "" : "s"})`);
+  {
+    const vp = derivedVpipCount();
+    const total = state.hands.length;
+    const pct = vpipPercent();
+    const pctStr = pct == null ? "—" : `${pct}%`;
+    lines.push(`Counts — VPIP: ${vp}/${total} (${pctStr}) · Showdowns: ${derivedShowdownCount()}`);
+  }
   lines.push("");
   lines.push("---");
   lines.push("");
@@ -1454,15 +1496,21 @@ window.addEventListener("DOMContentLoaded", () => {
   // + New Hand uses the chained flow (cards → action). The flow's "Add streets"
   // button opens the full editor when the hand goes past pre-flop.
   document.getElementById("btn-new-hand").addEventListener("click", newQuickStub);
+  // + Fold: 1-tap fold record, used to keep VPIP% denominator honest.
+  document.getElementById("btn-quick-fold").addEventListener("click", quickFold);
   document.getElementById("btn-export").addEventListener("click", exportToClipboard);
   document.getElementById("btn-settings").addEventListener("click", openSettings);
   // VPIP / SD chips are now read-only displays; their value is derived from
   // logged hands by derivedVpipCount() / derivedShowdownCount(). Tap shows a
   // brief explainer popover so the auto-behaviour isn't a black box.
   const explainTally = (which) => {
+    const vp = derivedVpipCount();
+    const sd = derivedShowdownCount();
+    const total = state.hands.length;
+    const pct = vpipPercent();
     const body = which === "vpip"
-      ? `Auto-counted from logged hands.\n\nEvery hand you log via + New Hand with a non-fold pre-flop action (Limp / Call / Raise / 3-bet / 4-bet / Jam) counts as 1 VPIP. Pure folds don't count by definition. Nothing to tap — log the hand and the count moves.`
-      : `Auto-counted from logged hands.\n\nEvery hand with at least one showdown entry (added via the Showdown step in the hand editor) counts as 1. Add a showdown to a hand and the count moves automatically.`;
+      ? `${total === 0 ? "No hands logged yet." : `${vp} of ${total} logged hand${total === 1 ? "" : "s"} = ${pct}% VPIP.`}\n\nNumerator: any hand with non-fold pre-flop action (Limp / Call / Raise / 3-bet / 4-bet / Jam).\nDenominator: total logged hands.\n\nFor an honest %, tap + Fold (bottom bar, 1 tap) on every hand you fold pre-flop without picking cards. Healthy range at this table: 18–25%.`
+      : `${total === 0 ? "No hands logged yet." : `${sd} showdown${sd === 1 ? "" : "s"} across ${total} logged hand${total === 1 ? "" : "s"}.`}\n\nA hand counts when it has at least one showdown entry (added via the Showdown step in the editor).`;
     showOnboarding(which === "vpip" ? "VPIP — auto" : "Showdowns — auto", body);
   };
   document.getElementById("btn-tally-vpip").addEventListener("click", () => explainTally("vpip"));
