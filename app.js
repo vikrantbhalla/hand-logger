@@ -1,7 +1,7 @@
 // Hand Logger — single-file vanilla-JS app
-// Build SHA injected at deploy time (`dev` when running locally).
+// Build SHA injected at deploy time. Dev (un-replaced) value shows as "__BUILD" prefix.
 const BUILD_SHA = "__BUILD_SHA__";
-console.log("[hand-logger] build:", BUILD_SHA === "__BUILD_SHA__" ? "dev" : BUILD_SHA);
+console.log("[hand-logger] build:", BUILD_SHA.startsWith("__BUILD") ? "dev" : BUILD_SHA);
 // Sections:
 //   1. Constants & strategy data
 //   2. State (localStorage-backed)
