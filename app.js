@@ -272,12 +272,12 @@ function renderTable() {
 
     svg.appendChild(g);
 
-    // Dealer button
+    // Dealer button — placed toward table center so it doesn't overlap the player letter on the seat.
     if (i === state.session.buttonSeatIdx) {
-      const bx = sx + Math.cos(angle - Math.PI/2) * 18;
-      const by = sy + Math.sin(angle - Math.PI/2) * 18;
+      const bx = sx + Math.cos(angle + Math.PI) * 36;
+      const by = sy + Math.sin(angle + Math.PI) * 36;
       const btn = el("g", { class: "btn-disc" });
-      btn.appendChild(el("circle", { cx: bx, cy: by, r: 9, class: "button-disc" }));
+      btn.appendChild(el("circle", { cx: bx, cy: by, r: 11, class: "button-disc" }));
       const t = el("text", { x: bx, y: by, class: "button-letter" });
       t.textContent = "D";
       btn.appendChild(t);
@@ -353,7 +353,9 @@ function handTier(h) {
 
 function cardsLabel(cards) {
   if (!cards || cards.length === 0) return "—";
-  return cards.map(c => c.rank + SUIT_GLYPH[c.suit]).join("");
+  const filled = cards.filter(Boolean);
+  if (filled.length === 0) return "—";
+  return filled.map(c => c.rank + SUIT_GLYPH[c.suit]).join("");
 }
 
 function summariseHand(h) {
@@ -541,8 +543,11 @@ function openCardPicker(opts) {
       root.querySelectorAll("button[data-rank]").forEach(b => {
         if (b.dataset.disabled) return;
         b.addEventListener("click", () => {
-          opts.onPick({ rank: b.dataset.rank, suit: b.dataset.suit });
+          // Close FIRST — onPick may open the next modal in a chained flow,
+          // and a trailing closeModal() would clobber its innerHTML.
+          const card = { rank: b.dataset.rank, suit: b.dataset.suit };
           closeModal();
+          opts.onPick(card);
         });
       });
       root.querySelector("button[data-act='close']")?.addEventListener("click", closeModal);
@@ -563,6 +568,7 @@ function newQuickStub() {
     showOnboarding("Set your seat first", "Tap your seat on the table, then choose This is my seat. The dealer button can be set the same way on the dealer's seat.");
     return;
   }
+  pruneEmptyHands();
   if (state.hands.length > 0) advanceButton();
   const n = state.hands.length + 1;
   const hand = {
@@ -677,11 +683,30 @@ function openQuickStubFlow(h) {
   pickCard1();
 }
 
+function pruneEmptyHands() {
+  // Drop hands that were created (e.g. via + New Hand) but abandoned without any data entered.
+  // "Empty" = no hole cards AND no pre-flop summary AND no streets/showdown.
+  const before = state.hands.length;
+  state.hands = state.hands.filter(h => {
+    const hasCards = h.myCards && h.myCards.some(Boolean);
+    const hasPre = (h.preflopSummary || "").trim().length > 0;
+    const hasStreets = h.flop || h.turn || h.river || (h.showdown && h.showdown.length);
+    const hasNotes = (h.notes || "").trim().length > 0;
+    return hasCards || hasPre || hasStreets || hasNotes;
+  });
+  if (state.hands.length !== before) {
+    state.hands.forEach((h, i) => h.n = i + 1);
+    saveState();
+  }
+}
+
 function newHand() {
   if (state.session.mySeatIdx == null) {
     showOnboarding("Set your seat first", "Tap your seat on the table, then choose This is my seat. The dealer button can be set the same way on the dealer's seat.");
     return;
   }
+  // Drop any abandoned shells from a prior cancel before pushing a fresh one.
+  pruneEmptyHands();
   // Auto-advance dealer button to next occupied seat (clockwise) — only if there are existing hands
   if (state.hands.length > 0) {
     advanceButton();
@@ -1096,6 +1121,7 @@ function strategyHint(label, position) {
 // ============================================================
 
 function exportToMarkdown() {
+  pruneEmptyHands();
   const lines = [];
   const dt = state.session.date;
   lines.push(`# Session Notes — ${formatDateForUI(dt)}`);
@@ -1325,10 +1351,27 @@ window.addEventListener("DOMContentLoaded", () => {
   document.getElementById("btn-quick-stub").addEventListener("click", newQuickStub);
   document.getElementById("btn-export").addEventListener("click", exportToClipboard);
   document.getElementById("btn-settings").addEventListener("click", openSettings);
-  document.getElementById("btn-tally-vpip").addEventListener("click", () => { state.session.tally.vpip += 1; saveState(); renderTopbar(); });
-  document.getElementById("btn-tally-vpip").addEventListener("contextmenu", e => { e.preventDefault(); state.session.tally.vpip = Math.max(0, state.session.tally.vpip - 1); saveState(); renderTopbar(); });
-  document.getElementById("btn-tally-sd").addEventListener("click", () => { state.session.tally.sd += 1; saveState(); renderTopbar(); });
-  document.getElementById("btn-tally-sd").addEventListener("contextmenu", e => { e.preventDefault(); state.session.tally.sd = Math.max(0, state.session.tally.sd - 1); saveState(); renderTopbar(); });
+  // Tally counters: tap = +1; long-press (500ms) or right-click = -1.
+  // The long-press path covers iPhone where right-click doesn't exist.
+  function bindTally(btnId, key) {
+    const btn = document.getElementById(btnId);
+    let pressTimer = null;
+    let longFired = false;
+    const inc = () => { state.session.tally[key] += 1; saveState(); renderTopbar(); };
+    const dec = () => { state.session.tally[key] = Math.max(0, state.session.tally[key] - 1); saveState(); renderTopbar(); };
+    btn.addEventListener("click", () => { if (longFired) { longFired = false; return; } inc(); });
+    btn.addEventListener("contextmenu", e => { e.preventDefault(); dec(); });
+    btn.addEventListener("pointerdown", () => {
+      longFired = false;
+      pressTimer = setTimeout(() => { longFired = true; dec(); navigator.vibrate?.(20); }, 500);
+    });
+    const cancel = () => { if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; } };
+    btn.addEventListener("pointerup", cancel);
+    btn.addEventListener("pointerleave", cancel);
+    btn.addEventListener("pointercancel", cancel);
+  }
+  bindTally("btn-tally-vpip", "vpip");
+  bindTally("btn-tally-sd", "sd");
   document.getElementById("btn-add-player").addEventListener("click", () => alert("Tap an empty seat on the table to assign a player."));
   document.getElementById("btn-set-my-seat").addEventListener("click", () => alert("Tap your seat on the table → 'This is my seat'."));
   document.getElementById("btn-move-button").addEventListener("click", () => { advanceButton(); saveState(); renderTable(); });
