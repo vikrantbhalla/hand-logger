@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Hand Logger" />
+<meta name="theme-color" content="#0b0f12" />
+<title>Hand Logger</title>
+<link rel="manifest" href="manifest.webmanifest" />
+<link rel="apple-touch-icon" href="icons/icon-192.png" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div id="app">
+  <header id="topbar">
+    <div class="topbar-left">
+      <span id="session-date" class="muted"></span>
+      <span class="dot-sep">·</span>
+      <span id="session-stakes" class="muted">25/50</span>
+    </div>
+    <div class="topbar-right">
+      <button id="btn-tally-vpip" class="counter" aria-label="VPIP tally"><span class="lbl">V</span><span class="num">0</span></button>
+      <button id="btn-tally-sd" class="counter" aria-label="Showdown tally"><span class="lbl">SD</span><span class="num">0</span></button>
+      <button id="btn-settings" class="icon-btn" aria-label="Settings">⚙︎</button>
+    </div>
+  </header>
+
+  <main id="main">
+    <section id="table-section">
+      <svg id="table-svg" viewBox="0 0 600 360" preserveAspectRatio="xMidYMid meet" aria-label="Poker table"></svg>
+      <div id="seat-tools">
+        <button id="btn-add-player" class="ghost-btn">+ Player</button>
+        <button id="btn-set-my-seat" class="ghost-btn">My seat</button>
+        <button id="btn-move-button" class="ghost-btn">Advance ⓑ</button>
+      </div>
+    </section>
+
+    <section id="hand-section">
+      <div id="hand-list-empty" class="empty-state">
+        <p>No hands yet. Tap <strong>New Hand</strong> when you want to log one — even a fold.</p>
+      </div>
+      <ol id="hand-list"></ol>
+    </section>
+  </main>
+
+  <footer id="bottombar">
+    <button id="btn-export" class="ghost-btn">Copy session</button>
+    <button id="btn-quick-stub" class="ghost-btn">+ Stub</button>
+    <button id="btn-new-hand" class="primary-btn">+ New Hand</button>
+  </footer>
+
+  <!-- Modals (single instances, repurposed) -->
+  <div id="modal-root" hidden></div>
+</div>
+
+<script src="config.local.js" defer onerror="window.__noLocalConfig=true"></script>
+<script src="app.js" defer></script>
+</body>
+</html>
